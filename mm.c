@@ -24,15 +24,15 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "",
+    "5조",
     /* First member's full name */
-    "",
+    "심우근",
     /* First member's email address */
-    "",
+    "bovik@cs.cmu.edu",
     /* Second member's full name (leave blank if none) */
-    "",
-    /* Second member's email address (leave blank if none) */
-    ""};
+    "강영훈",
+    "bovik@cs.cmu.edu",
+};
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
@@ -40,64 +40,6 @@ team_t team = {
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
-
-// Basic constants and macros
-#define WSIZE 4
-#define DSIZE 8
-#define CHUNKSIZE (1 << 12)
-#define INITCHUNKSIZE (1 << 6) // 64
-#define LISTLIMIT 10
-
-// calculate max value
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
-#define MIN(x, y) ((x) < (y) ? (x) : (y))
-
-// size와 할당 여부를 하나로 합친다
-#define PACK(size, alloc) ((size) | (alloc))
-
-// 포인터 p가 가리키는 주소의 값을 가져온다.
-#define GET(p) (*(unsigned int *)(p))
-
-// 포인터 p가 가리키는 곳에 val을 역참조로 갱신
-#define PUT(p, val) (*(unsigned int *)(p) = (val))
-
-// 포인터 p가 가리키는 곳의 값에서 하위 3비트를 제거하여 블럭 사이즈를 반환(헤더+푸터+페이로드+패딩)
-#define GET_SIZE(p) (GET(p) & ~0X7)
-// 포인터 p가 가리키는 곳의 값에서 맨 아래 비트를 반환하여 할당상태 판별
-#define GET_ALLOC(p) (GET(p) & 0X1)
-
-// 블럭포인터를 통해 헤더 포인터,푸터 포인터 계산
-#define HDRP(bp) ((char *)(bp)-WSIZE)
-#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
-
-// 블럭포인터 -> 블럭포인터 - WSIZE : 헤더위치 -> GET_SIZE으로 현재 블럭사이즈계산 -> 다음 블럭포인터 반환
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp)-WSIZE)))
-// 블럭포인터 -> 블럭포인터 - DSIZE : 이전 블럭 푸터 -> GET_SIZE으로 이전 블럭사이즈계산 -> 이전 블럭포인터 반환
-#define PREV_BLKP(bp) ((char *)(bp)-GET_SIZE(((char *)(bp)-DSIZE)))
-
-// 포인터 p가 가리키는 메모리에 포인터 ptr을 입력
-#define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
-
-// 가용 블럭 리스트에서 next 와 prev의 포인터를 반환
-#define NEXT_PTR(ptr) ((char *)(ptr))
-#define PREV_PTR(ptr) ((char *)(ptr) + WSIZE)
-
-// segregated list 내에서 next 와 prev의 포인터를 반환
-#define NEXT(ptr) (*(char **)(ptr))
-#define PREV(ptr) (*(char **)(PREV_PTR(ptr)))
-
-// 전역변수
-char *heap_listp = 0;
-void *segregated_free_lists[LISTLIMIT];
-
-// 함수 목록
-static void *coalesce(void *bp);
-static void *extend_heap(size_t words);
-static void *find_fit(size_t asize);
-static void place(void *bp, size_t asize);
-static void insert_node(void *ptr, size_t size);
-static void delete_node(void *ptr);
-static int get_list_index(size_t size);
 
 /*
  * mm_init - initialize the malloc package.
@@ -156,18 +98,19 @@ static void insert_node(void *ptr, size_t size)
         search_ptr = NEXT(search_ptr);
     }
 
-    SET_PTR(NEXT_PTR(ptr), search_ptr);
-    SET_PTR(PREV_PTR(ptr), insert_ptr);
+    SET_PTR(PRED_P(ptr), search_ptr);
+    SET_PTR(SUCC_P(ptr), insert_ptr);
 
     if (search_ptr != NULL)
     {
-        SET_PTR(PREV_PTR(search_ptr), ptr);
+        SET_PTR(SUCC_P(search_ptr), ptr);
     }
 
     if (insert_ptr != NULL)
     {
-        SET_PTR(NEXT_PTR(insert_ptr), ptr);
+        SET_PTR(PRED_P(insert_ptr), ptr);
     }
+
     else
     {
         segregated_free_lists[idx] = ptr;
@@ -181,12 +124,12 @@ static void delete_node(void *ptr)
 
     if (NEXT(ptr) != NULL)
     {
-        SET_PTR(PREV_PTR(NEXT(ptr)), PREV(ptr));
+        SET_PTR(SUCC_P(NEXT(ptr)), PREV(ptr));
     }
 
     if (PREV(ptr) != NULL)
     {
-        SET_PTR(NEXT_PTR(PREV(ptr)), NEXT(ptr));
+        SET_PTR(PRED_P(PREV(ptr)), NEXT(ptr));
     }
     else
     {
@@ -290,16 +233,12 @@ static void *find_fit(size_t asize)
 {
     for (int idx = get_list_index(asize); idx < LISTLIMIT; idx++)
     {
-        char *bp = segregated_free_lists[idx];
-
-        while (bp != NULL && asize > GET_SIZE(HDRP(bp)))
+        for (char *bp = segregated_free_lists[idx]; bp != NULL; bp = NEXT(bp))
         {
-            bp = NEXT(bp);
-        }
-
-        if (bp != NULL)
-        {
-            return bp;
+            if (asize <= GET_SIZE(HDRP(bp)))
+            {
+                return bp;
+            }
         }
     }
 
